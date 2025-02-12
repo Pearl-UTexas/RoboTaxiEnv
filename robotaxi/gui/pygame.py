@@ -4,14 +4,19 @@ import time
 import random
 import cv2
 import os
-
+import json
 import threading
+import logging
+import sys
 
 from robotaxi.agent import HumanAgent
 from robotaxi.gameplay.entities import (CellType, SnakeAction, SnakeDirection, ALL_SNAKE_DIRECTIONS, ALL_SNAKE_ACTIONS, SNAKE_GROW, WALL_WARP, Point)
 from robotaxi.gameplay.environment import PLAY_SOUND
+from robotaxi.gui.python_client import Trigger
 
 frame_ct = -1
+# parallel = Trigger('USB2LPT')
+# parallel.init(50)
 
 class captureThread(threading.Thread):
 
@@ -61,8 +66,8 @@ class PyGameGUI:
     """ Provides a Snake GUI powered by Pygame. """
 
     FPS_LIMIT = 60
-    AI_TIMESTEP_DELAY = 500
-    HUMAN_TIMESTEP_DELAY = 500
+    AI_TIMESTEP_DELAY = 5000
+    HUMAN_TIMESTEP_DELAY = 5000
 
     SNAKE_CONTROL_KEYS = [
         pygame.K_UP,
@@ -140,6 +145,9 @@ class PyGameGUI:
         self.marker_font =  pygame.font.Font("fonts/OpenSans-Bold.ttf", int(12*(self.CELL_SIZE/40.0)))
         pygame.display.set_caption('Robotaxi')
 
+        ##################################"serial port"#############################################
+        self.parallel = Trigger('ARDUINO')
+        self.parallel.init(50)
     def set_icon_scheme(self, idx):
         scheme = self.car_schemes[idx]
         self.south = pygame.transform.scale(pygame.image.load("icon/"+scheme+"_south.png"),(self.CELL_SIZE, self.CELL_SIZE-5))
@@ -648,14 +656,66 @@ class PyGameGUI:
             capture_thread1.start()
         try:
             for episode in range(num_episodes):                
-                self.run_episode()
+                self.run_episode(collect_feedback=True, participant_idx="test")
                 pygame.time.wait(1500)
             capture_thread1.stop()
         except QuitRequestedError:
             capture_thread1.stop()
-
-    def run_episode(self):
+            
+    def run_episode(self, collect_feedback=False, participant_idx=None):
         """ Run the GUI player for a single episode. """
+        
+        assert not collect_feedback or participant_idx is not None, "If collect_feedback is True, participant_idx must be specified."
+        
+        feedback_log = []
+        if collect_feedback:
+            feedback_font = pygame.font.Font(None, 36)  # Use default font with size 36
+            feedback_buttons = pygame.Rect(10, self.screen_size[1] - 50, self.screen_size[0] - 20, 40)  # Region at bottom
+            button_width = 100
+            button_height = 60
+            button_spacing = 20
+            center_x = self.screen_size[0] // 2
+            center_y = self.screen_size[1] - 100
+
+            minus_button = pygame.Rect(
+                center_x - button_width - (button_spacing // 2), 
+                center_y - (button_height // 2), 
+                button_width, 
+                button_height
+            )
+            plus_button = pygame.Rect(
+                center_x + (button_spacing // 2), 
+                center_y - (button_height // 2), 
+                button_width, 
+                button_height
+            )
+            
+            minus_button_pressed = False
+            plus_button_pressed = False
+            
+        def draw_feedback_buttons():
+            # Determine button colors based on pressed state
+            minus_color = (150, 0, 0) if minus_button_pressed else (200, 0, 0)  # Darker red when pressed
+            plus_color = (0, 150, 0) if plus_button_pressed else (0, 200, 0)    # Darker green when pressed
+            
+            pygame.draw.rect(self.screen, minus_color, minus_button)
+            pygame.draw.rect(self.screen, plus_color, plus_button)
+            
+            minus_text = feedback_font.render("-", True, (255, 255, 255))
+            plus_text = feedback_font.render("+", True, (255, 255, 255))
+            
+            self.screen.blit(minus_text, (
+                minus_button.centerx - minus_text.get_width() // 2, 
+                minus_button.centery - minus_text.get_height() // 2
+            ))
+            self.screen.blit(plus_text, (
+                plus_button.centerx - plus_text.get_width() // 2, 
+                plus_button.centery - plus_text.get_height() // 2
+            ))
+
+        
+        pygame.mouse.set_visible(True)  # Hide default cursor for custom cursor
+    
         
         global frame_ct
         # Initialize the environment.
@@ -705,7 +765,8 @@ class PyGameGUI:
                 
                 for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
-                        if event.key == pygame.K_RETURN:
+                        # if event.key == pygame.K_RETURN:
+                        if event.key == pygame.K_SPACE:
                              self.selected = True
                              #self.pause = False                        
                         elif event.key == pygame.K_RIGHT:
@@ -718,9 +779,15 @@ class PyGameGUI:
                             self.set_icon_scheme(self.selected_icon_scheme) 
                         elif event.key == pygame.K_ESCAPE:
                             raise QuitRequestedError
+
+                    if event.type == pygame.MOUSEBUTTONDOWN and collect_feedback:
+                        if minus_button.collidepoint(event.pos):
+                            feedback_log.append({"time": time.time(), "reward": -1})
+                        elif plus_button.collidepoint(event.pos):
+                            feedback_log.append({"time": time.time(), "reward": +1})
+
                     if event.type == pygame.QUIT:
                         raise QuitRequestedError
-                        
                     
                 pygame.display.update()          
                 self.fps_clock.tick(20)
@@ -739,9 +806,6 @@ class PyGameGUI:
         disp_text = start_text_font.render("Press <Space> to Start", True, (220, 220, 220))
         self.screen.blit(disp_text, (self.screen_size[0] // 2 - disp_text.get_width()// 2 , self.screen_size[1] // 2 - disp_text.get_height()//2 ))          
         pygame.display.update()
-        
-                
-        
 
         # Main game loop.
         running = True
@@ -764,6 +828,25 @@ class PyGameGUI:
 
                 if event.type == pygame.QUIT:
                     self.quit_game()
+                    
+                if event.type == pygame.MOUSEBUTTONDOWN and collect_feedback:
+                    if minus_button.collidepoint(event.pos):
+                        feedback_log.append({"time": time.time(), "reward": -1})
+                        minus_button_pressed = True  # Set pressed state
+                        
+                        # ADD ErrP Trigger here. NEGATIVE Reward was assigned by the human.
+                        
+                    elif plus_button.collidepoint(event.pos):
+                        feedback_log.append({"time": time.time(), "reward": +1})
+                        plus_button_pressed = True  # Set pressed state
+                        
+                        # ADD ErrP Trigger here. POSITIVE Reward was assigned by the human.
+                        
+                
+                if event.type == pygame.MOUSEBUTTONUP and collect_feedback:
+                    minus_button_pressed = False  # Reset pressed state
+                    plus_button_pressed = False   # Reset pressed state
+
 
             self.handle_pause()
 
@@ -772,6 +855,8 @@ class PyGameGUI:
                 self.begin_sound.play()
 
             if self.last_head == [0,0]:
+
+                
                 for interpolate_idx in range(4): 
                     cell_coords = pygame.Rect(
                         self.env.snake.head[0]*self.CELL_SIZE,
@@ -796,10 +881,14 @@ class PyGameGUI:
                 pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, cell_coords)
                 if self.collaborating_agent is not None:
                     pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, cell_coords_collaborator)
+                if collect_feedback:
+                    draw_feedback_buttons()
+                    
 
             # Update game state.
             timestep_timed_out = self.timestep_watch.time() >= self.timestep_delay
             human_made_move = is_human_agent and action != SnakeAction.MAINTAIN_DIRECTION
+            
                     
             if timestep_timed_out or human_made_move:
                 self.timestep_watch.reset()
@@ -822,6 +911,14 @@ class PyGameGUI:
                         running = False
                 
                 self.env.choose_action(action)
+                
+                # ADD ErrP trigger here
+                # VEHICLE STARTED TO MOVE...
+                # parallel.signal(100)
+                self.parallel.signal(100)
+           
+                print(1)
+                
                 if self.collaborating_agent is not None:
                     self.env.choose_action_collaborator(collaborator_action)
 
@@ -910,9 +1007,31 @@ class PyGameGUI:
                                 self.pause = True
                             if event.key == pygame.K_ESCAPE:
                                 self.quit_game()
+                                
+                                
 
                         if event.type == pygame.QUIT:
                             self.quit_game()
+                            
+                        if event.type == pygame.MOUSEBUTTONDOWN and collect_feedback:
+                            if minus_button.collidepoint(event.pos):
+                                feedback_log.append({"time": time.time(), "reward": -1})
+                                minus_button_pressed = True  # Set pressed state
+                                # parallel.signal(103) #send trigger code 3
+                                self.parallel.signal(103)
+                         
+                                print(3)
+                            elif plus_button.collidepoint(event.pos):
+                                feedback_log.append({"time": time.time(), "reward": +1})
+                                plus_button_pressed = True  # Set pressed state
+                                # parallel.signal(102) #send trigger code 2
+                                self.parallel.signal(102)
+                             
+                                print(2)
+                        
+                        if event.type == pygame.MOUSEBUTTONUP and collect_feedback:
+                            minus_button_pressed = False  # Reset pressed state
+                            plus_button_pressed = False   # Reset pressed state
 
                     self.handle_pause()
   
@@ -920,14 +1039,19 @@ class PyGameGUI:
                         imm_coords = self.transition_animation(imm_coords, x ,y, x0, y0, timestep_result.reward, self.curr_icon, interpolate_idx, False, imm_coords_collaborator)
                         imm_coords_collaborator = self.transition_animation(imm_coords_collaborator, x_collaborator ,y_collaborator, x0_collaborator, y0_collaborator, timestep_result_collaborator.reward, self.curr_icon_collaborator, interpolate_idx, True) 
                     else:
+                        
                         imm_coords = self.transition_animation(imm_coords, x ,y, x0, y0, timestep_result.reward, self.curr_icon, interpolate_idx, False)
 
                     if self.collaborating_agent is not None: 
                         self.render_scoreboard(score, time_remaining, timestep_result.reward + timestep_result_collaborator.reward)
                     else: 
                         self.render_scoreboard(score, time_remaining, timestep_result.reward )
-                    pygame.display.set_caption(f'Robotaxi [Score: {score:01d}]   |   [Steps Remaining: {time_remaining:01d}]')                    
+                    pygame.display.set_caption(f'Robotaxi [Score: {score:01d}]   |   [Steps Remaining: {time_remaining:01d}]')       
+                    if collect_feedback:
+                        draw_feedback_buttons()
+                                 
                     pygame.display.update()
+                    
                     self.fps_clock.tick(self.intermediate_frames+5)
                
                 pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, imm_coords)
@@ -953,8 +1077,18 @@ class PyGameGUI:
                     self.render_scoreboard(score, time_remaining, timestep_result.reward +  timestep_result_collaborator.reward)
                 else: 
                     self.render_scoreboard(score, time_remaining, timestep_result.reward )
+
+                if collect_feedback:
+                    draw_feedback_buttons()
+                                    
                 pygame.display.update()
                 self.fps_clock.tick(self.FPS_LIMIT)
+        if collect_feedback:
+            curr_time = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"{participant_idx}_{curr_time}.json"
+            with open(filename, "w") as feedback_file:
+                json.dump(feedback_log, feedback_file, indent=4)
+
 
 
 class Stopwatch(object):

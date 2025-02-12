@@ -47,7 +47,7 @@ class Environment(object):
         self.bad_fruit_revealed = False
         self.lava_revealed = False
         self.good_fruit_num = 2
-        self.bad_fruit_num = 2 if not self.collaboration else 0
+        self.bad_fruit_num = 0 if not self.collaboration else 0
         self.lava_num = 2
 
         self.timestep_index = 0

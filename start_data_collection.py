@@ -17,7 +17,10 @@ import wave
 
 from os.path import isfile, join
 from robotaxi.gui.pygame import QuitRequestedError
-from robotaxi.gameplay.entities import (Point, Field, CellType, RobotaxiDirection, ALL_ROBOTAXI_DIRECTIONS, ROBOTAXI_GROW, WALL_WARP)
+# from robotaxi.gameplay.entities import (Point, Field, CellType, RobotaxiDirection, ALL_ROBOTAXI_DIRECTIONS, ROBOTAXI_GROW, WALL_WARP)
+from robotaxi.gameplay.entities import Point, CellType
+from robotaxi.gameplay.entities import SnakeDirection as RobotaxiDirection
+
 
 from skimage.transform import resize
 import matplotlib.pyplot as plt
@@ -208,8 +211,8 @@ class Colors:
 
     CELL_TYPE = {
         CellType.WALL: (26, 26, 26),
-        CellType.ROBOTAXI_BODY: (82, 154, 255),
-        CellType.ROBOTAXI_HEAD: (0, 77, 64),
+        CellType.SNAKE_BODY: (82, 154, 255),
+        CellType.SNAKE_HEAD: (0, 77, 64),
         CellType.GOOD_FRUIT: np.random.randint(20,150,size=3) ,
         CellType.BAD_FRUIT:  np.random.randint(80,250,size=3),
         CellType.LAVA: np.random.randint(30,155,size=3),
@@ -310,8 +313,8 @@ class PyGameGUI:
             '1': CellType.GOOD_FRUIT,
             '2': CellType.BAD_FRUIT,
             '3': CellType.LAVA,
-            '4': CellType.ROBOTAXI_HEAD,
-            '5': CellType.ROBOTAXI_BODY,
+            '4': CellType.SNAKE_HEAD,
+            '5': CellType.SNAKE_BODY,
             '6': CellType.WALL,
         }
         self.object_type_to_reward = {
@@ -425,7 +428,7 @@ class PyGameGUI:
                     self.CELL_SIZE,
                 )
                 # if cell_type == CellType.EMPTY:  
-                if cell_type == CellType.EMPTY or cell_type == CellType.ROBOTAXI_BODY:               
+                if cell_type == CellType.EMPTY or cell_type == CellType.SNAKE_BODY:               
                     # pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, cell_coords)
                     self.fill_background(cell_coords)
                     
@@ -452,7 +455,7 @@ class PyGameGUI:
                         elif cell_type == CellType.LAVA:
                             self.screen.blit(self.lava_icon, cell_coords)
 
-                        elif cell_type == CellType.ROBOTAXI_HEAD:
+                        elif cell_type == CellType.SNAKE_HEAD:
                             # pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, cell_coords)
                             self.fill_background(cell_coords)
 
@@ -470,7 +473,7 @@ class PyGameGUI:
                             self.last_head = self.curr_head
                             self.curr_head = [x,y]
 
-                        elif cell_type == CellType.ROBOTAXI_BODY:
+                        elif cell_type == CellType.SNAKE_BODY:
                             # pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, cell_coords)
                             # self.screen.blit(self.body_icon, cell_coords)
                             self.fill_background(cell_coords)
@@ -488,13 +491,13 @@ class PyGameGUI:
                             pygame.draw.rect(self.screen, color, internal_square_coords)
                         
                     else:
-                        if cell_type == CellType.ROBOTAXI_HEAD or cell_type == CellType.ROBOTAXI_BODY:
+                        if cell_type == CellType.SNAKE_HEAD or cell_type == CellType.SNAKE_BODY:
                             # pygame.draw.rect(self.screen, Colors.SCREEN_BACKGROUND, cell_coords)
                             self.fill_background(cell_coords)
                             color = Colors.CELL_TYPE[cell_type]             
                             radius =  self.CELL_SIZE // 2 
                             cell_center = (x * self.CELL_SIZE+radius, y * self.CELL_SIZE+radius)
-                            if cell_type == CellType.ROBOTAXI_HEAD:
+                            if cell_type == CellType.SNAKE_HEAD:
                                 self.last_head = self.curr_head
                                 self.curr_head = [x,y]
                                 #pygame.draw.circle(self.screen, color, cell_center, radius//2)          
@@ -1108,7 +1111,7 @@ class PyGameGUI:
 
                                         
                         ''' update head'''
-                        pygame.draw.circle(self.screen, Colors.CELL_TYPE[CellType.ROBOTAXI_HEAD], cell_center, radius*2//3)       
+                        pygame.draw.circle(self.screen, Colors.CELL_TYPE[CellType.SNAKE_HEAD], cell_center, radius*2//3)       
                                 
                         ''' Face recordings'''                 
                         face_img = pygame.transform.scale(pygame.image.load(face_frame),(320,240))
@@ -1209,7 +1212,7 @@ class PyGameGUI:
                             self.faded_flash(reward, self.intermediate_frames)
                                         
                         ''' update head'''
-                        pygame.draw.circle(self.screen, Colors.CELL_TYPE[CellType.ROBOTAXI_HEAD], cell_center, radius*2//3)
+                        pygame.draw.circle(self.screen, Colors.CELL_TYPE[CellType.SNAKE_HEAD], cell_center, radius*2//3)
 
                         ''' Time left panel '''                         
                         ct = 2
